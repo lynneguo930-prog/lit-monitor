@@ -129,7 +129,8 @@ def main() -> int:
         out("[FAIL] " + err_msg(data))
         out("       请检查网络 / 代理，或稍后重试。")
         return 1
-    if code in (401, 403):
+    domain_message = err_msg(data).lower()
+    if code in (401, 403) or (code == 400 and "api key" in domain_message):
         out("[FAIL] HTTP %d: %s" % (code, err_msg(data)))
         out("       Key 无效或权限不足。去 Resend -> API Keys 重新创建，")
         out("       Permission 选 Full access 或至少包含 Sending access。")
@@ -208,7 +209,7 @@ def main() -> int:
         out("解法 A（最省事）：用 " + RECIPIENT + " 注册 / 登录 Resend，再重跑本脚本。")
         out("解法 B：Resend -> Domains -> Add Domain，按提示在域名 DNS 后台加 3 条记录，")
         out("        等状态变为 Verified，然后设置 RESEND_FROM 后重跑本脚本。")
-    elif code == 401:
+    elif code == 401 or (code == 400 and "api key" in lowered):
         out("Key 无效，去 Resend -> API Keys 重新生成并完整复制（re_ 开头）。")
     elif code == 429:
         out("触发限流，等 1 分钟再试；免费额度为每日 100 封 / 每秒 2 封。")
