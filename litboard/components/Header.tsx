@@ -103,6 +103,16 @@ export default function Header({ topic, update, loading, onSettings, onRefresh }
             })}
           </p>
         )}
+
+        <a
+          href="/papers-archive.html"
+          className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-white"
+        >
+          查看全量文献归档（含中文题名与摘要）
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </a>
       </div>
     </header>
   );

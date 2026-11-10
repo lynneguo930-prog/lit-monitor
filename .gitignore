@@ -17,6 +17,9 @@ litboard/.vercel/
 litboard.zip
 run_check.cmd
 push_to_github.cmd
+/papers_archive.html
+/papers_cache.json
+/translations.json
 .gha-check/
 .tscheck/
 .workbuddy/
