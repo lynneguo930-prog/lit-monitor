@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.local
+
+# Next.js / Node (keep source, skip build output)
+litboard/node_modules/
+litboard/.next/
+litboard/out/
+litboard/.vercel/
+*.tsbuildinfo
+
+# Local-only artifacts
+litboard.zip
+.gha-check/
+.tscheck/
+.workbuddy/
+.DS_Store
+Thumbs.db
+
+# NOTE: seen_ids.json is intentionally NOT ignored.
+# The GitHub Actions bot commits it back to persist deduplication state.

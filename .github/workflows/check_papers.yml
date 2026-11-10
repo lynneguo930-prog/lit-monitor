@@ -1,0 +1,138 @@
+name: Check Papers
+
+on:
+  # 每天 UTC 08:00 运行；GitHub Actions 的 cron 一律按 UTC 解析
+  schedule:
+    - cron: "0 8 * * *"
+  # 手动触发，便于随时验证配置与邮件链路
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: "日志级别（手动测试用）"
+        required: false
+        default: "INFO"
+        type: choice
+        options:
+          - INFO
+          - DEBUG
+
+# 避免两个实例同时读写 seen_ids.json：重复发信 / non-fast-forward 推送
+concurrency:
+  group: check-papers-${{ github.ref }}
+  cancel-in-progress: false
+
+# 回写 seen_ids.json 需要 GITHUB_TOKEN 具备仓库写权限
+permissions:
+  contents: write
+
+jobs:
+  check-papers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # 收件人：优先用 Secret RECIPIENT_EMAIL，未配置时用默认地址
+      ALERT_TO_EMAILS: ${{ secrets.RECIPIENT_EMAIL || 'lynneguo930@gmail.com' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0            # rebase 需要完整历史
+          persist-credentials: true # 保留 token，供后续 git push 使用
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate required config
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          set -eu
+          [ -n "$RESEND_API_KEY" ] || { echo "::error::缺少 Secret: RESEND_API_KEY"; exit 1; }
+          [ -n "$ALERT_TO_EMAILS" ] || { echo "::error::收件邮箱为空"; exit 1; }
+          echo "配置校验通过，收件人: $ALERT_TO_EMAILS"
+
+      - name: Run literature monitor
+        id: monitor
+        env:
+          # ---- 必填 ----
+          RESEND_API_KEY:   ${{ secrets.RESEND_API_KEY }}
+          # ALERT_TO_EMAILS 由 job 级 env 提供（Secret RECIPIENT_EMAIL 或默认收件地址）
+          # ---- 可选（Secrets / Variables），未配置时脚本会走内置默认值 ----
+          RESEND_FROM:      ${{ secrets.RESEND_FROM || 'onboarding@resend.dev' }}
+          OPENALEX_MAILTO:  ${{ vars.OPENALEX_MAILTO }}
+          SEARCH_QUERIES:   ${{ vars.SEARCH_QUERIES }}
+          TOPIC_LABEL:      ${{ vars.TOPIC_LABEL }}
+          LOOKBACK_DAYS:    ${{ vars.LOOKBACK_DAYS || '7' }}
+          MAX_PAGES:        ${{ vars.MAX_PAGES || '10' }}
+          MAX_EMAIL_ITEMS:  ${{ vars.MAX_EMAIL_ITEMS || '50' }}
+          LOG_LEVEL:        ${{ inputs.log_level || vars.LOG_LEVEL || 'INFO' }}
+          SEEN_FILE:        ${{ github.workspace }}/seen_ids.json
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          if [ -f seen_ids.json ]; then
+            before="$(sha256sum seen_ids.json | cut -d' ' -f1)"
+          else
+            before="absent"
+          fi
+
+          python main.py
+
+          if [ -f seen_ids.json ]; then
+            after="$(sha256sum seen_ids.json | cut -d' ' -f1)"
+          else
+            after="absent"
+          fi
+          if [ "$before" != "$after" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "seen_ids.json 已更新，稍后提交"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "无新增文献，seen_ids.json 未变化"
+          fi
+
+      - name: Commit and push seen_ids.json
+        if: success() && steps.monitor.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # -f：即使用户在 .gitignore 中忽略了 seen_ids.json 也要强制纳入版本控制
+          git add -f seen_ids.json
+          # [skip ci]：将来若新增 push 触发，可避免机器人提交引发自循环
+          git commit -m "chore: update seen_ids.json [skip ci] $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${BRANCH}"; then
+              echo "已推送 seen_ids.json 到 ${BRANCH}"
+              exit 0
+            fi
+            echo "push 失败，rebase 后重试 (${attempt}/3)"
+            git pull --rebase --autostash origin "${BRANCH}" || true
+          done
+          echo "::error::推送失败：请检查分支保护规则与 GITHUB_TOKEN 写权限"
+          exit 1
+
+      # 推送失败时保留现场，可下载 seen_ids.json 手动恢复去重状态
+      - name: Backup seen_ids.json on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seen-ids-${{ github.run_id }}
+          path: seen_ids.json
+          if-no-files-found: ignore
+          retention-days: 14
