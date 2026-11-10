@@ -13,8 +13,10 @@ litboard/out/
 litboard/.vercel/
 *.tsbuildinfo
 
-# Local-only artifacts
+# Local-only artifacts (machine-specific helper scripts, never publish)
 litboard.zip
+run_check.cmd
+push_to_github.cmd
 .gha-check/
 .tscheck/
 .workbuddy/
